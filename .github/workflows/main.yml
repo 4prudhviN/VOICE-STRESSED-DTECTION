@@ -1,0 +1,207 @@
+# ================================
+# VOICE STRESS DETECTION PROJECT
+# ================================
+
+# Install libraries
+!pip install librosa
+
+import numpy as np
+import pandas as pd
+import librosa
+import librosa.display
+import matplotlib.pyplot as plt
+import os
+
+from google.colab import files
+import zipfile
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+# ================================
+# STEP 1: Upload Dataset ZIP
+# ================================
+
+uploaded = files.upload()
+
+for file in uploaded.keys():
+    with zipfile.ZipFile(file, 'r') as zip_ref:
+        zip_ref.extractall("ravdess")
+
+print("Dataset extracted")
+
+# ================================
+# STEP 2: Feature Extraction
+# ================================
+
+def extract_features(file):
+
+    audio, sr = librosa.load(file, duration=3, offset=0.5)
+
+    mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40)
+    mfcc = np.mean(mfcc.T, axis=0)
+
+    zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
+
+    centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
+
+    bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=audio, sr=sr))
+
+    rolloff = np.mean(librosa.feature.spectral_rolloff(y=audio, sr=sr))
+
+    energy = np.mean(audio**2)
+
+    feature = np.hstack([mfcc, zcr, centroid, bandwidth, rolloff, energy])
+
+    return feature
+
+
+# ================================
+# STEP 3: Load Dataset
+# ================================
+
+X = []
+y = []
+
+dataset_path = "ravdess"
+
+for root, dirs, files in os.walk(dataset_path):
+
+    for file in files:
+
+        if file.endswith(".wav"):
+
+            emotion = int(file.split("-")[2])
+
+            # calm = normal
+            # angry(5), fearful(6) = stressed
+
+            if emotion == 2:
+                label = 0
+
+            elif emotion in [5,6]:
+                label = 1
+
+            else:
+                continue
+
+            path = os.path.join(root, file)
+
+            features = extract_features(path)
+
+            X.append(features)
+            y.append(label)
+
+X = np.array(X)
+y = np.array(y)
+
+print("Total samples:", len(X))
+
+
+# ================================
+# STEP 4: Normalize Features
+# ================================
+
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
+
+
+# ================================
+# STEP 5: Train Test Split
+# ================================
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+
+# ================================
+# STEP 6: Train Model
+# ================================
+
+model = RandomForestClassifier(
+    n_estimators=300,
+    max_depth=20,
+    random_state=42
+)
+
+model.fit(X_train, y_train)
+
+print("Model trained")
+
+
+# ================================
+# STEP 7: Evaluate Model
+# ================================
+
+y_pred = model.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+
+print("\nAccuracy:", accuracy)
+
+
+# ================================
+# STEP 8: Confusion Matrix
+# ================================
+
+cm = confusion_matrix(y_test, y_pred)
+
+print("\nConfusion Matrix:")
+print(cm)
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+
+# ================================
+# STEP 9: Plot Waveform
+# ================================
+
+sample = os.path.join(root, file)
+
+audio, sr = librosa.load(sample)
+
+plt.figure(figsize=(10,4))
+librosa.display.waveshow(audio, sr=sr)
+plt.title("Waveform")
+plt.show()
+
+
+# ================================
+# STEP 10: Spectrogram
+# ================================
+
+spec = librosa.stft(audio)
+
+plt.figure(figsize=(10,4))
+librosa.display.specshow(
+    librosa.amplitude_to_db(spec),
+    sr=sr,
+    x_axis='time',
+    y_axis='hz'
+)
+
+plt.title("Spectrogram")
+plt.colorbar()
+plt.show()
+
+
+# ================================
+# STEP 11: MFCC Plot
+# ================================
+
+mfcc = librosa.feature.mfcc(y=audio, sr=sr)
+
+plt.figure(figsize=(10,4))
+librosa.display.specshow(
+    mfcc,
+    sr=sr,
+    x_axis='time'
+)
+
+plt.title("MFCC")
+plt.colorbar()
+plt.show()
